@@ -1,0 +1,68 @@
+pipeline {
+
+    agent any
+
+    environment {
+        IMAGE_NAME = "neeleshram/employeeapp"
+        KUBECONFIG = "/var/jenkins_home/.kube/config-jenkins"
+    }
+
+    stages {
+
+        stage('Build Application') {
+            steps {
+                dir('employeeapp') {
+                    sh './mvnw clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t $IMAGE_NAME:latest -f employeeapp/Dockerfile employeeapp'
+            }
+        }
+
+        stage('Docker Login') {
+            steps {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )
+                ]) {
+                    sh '''
+                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    '''
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                sh 'docker push $IMAGE_NAME:latest'
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                kubectl apply -f employeeapp/kubernetes/
+                kubectl rollout restart deployment/employeeapp
+                kubectl rollout status deployment/employeeapp
+                '''
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                sh '''
+                kubectl get deployments
+                kubectl get pods
+                kubectl get svc
+                '''
+            }
+        }
+    }
+}
