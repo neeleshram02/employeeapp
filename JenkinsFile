@@ -2,71 +2,64 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "neeleshram/employee-app"
-        IMAGE_TAG  = "v1"
+        IMAGE_NAME = "neeleshram02/employee-app"
+        IMAGE_TAG = "latest"
     }
 
     stages {
 
         stage('Checkout Code') {
             steps {
-                git branch: 'main',
-                    url: 'https://github.com/neeleshram02/employee-app.git'
+                git branch: 'master',
+                    url: 'https://github.com/neeleshram02/employeeapp.git'
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                sh './mvnw clean package -DskipTests'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
-                """
+                sh 'docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .'
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-
-                    sh """
-                        echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'dockerhub',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh '''
+                        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
                         docker push ${IMAGE_NAME}:${IMAGE_TAG}
-                        docker logout
-                    """
+                    '''
                 }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh """
+                sh '''
                     kubectl apply -f deployment.yml
                     kubectl apply -f service.yml
-                """
+                '''
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh """
-                    kubectl get deployments
+                sh '''
                     kubectl get pods
                     kubectl get services
-                """
+                '''
             }
-        }
-    }
-
-    post {
-        success {
-            echo 'Employee application deployed successfully!'
-        }
-
-        failure {
-            echo 'Pipeline failed. Check the stage logs.'
         }
     }
 }
