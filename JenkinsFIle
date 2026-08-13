@@ -1,68 +1,72 @@
 pipeline {
-
     agent any
 
     environment {
-        IMAGE_NAME = "neeleshram/employeeapp"
-        KUBECONFIG = "/var/jenkins_home/.kube/config-jenkins"
+        IMAGE_NAME = "neeleshram/employee-app"
+        IMAGE_TAG  = "v1"
     }
 
     stages {
 
-        stage('Build Application') {
+        stage('Checkout Code') {
             steps {
-                dir('employeeapp') {
-                    sh './mvnw clean package -DskipTests'
-                }
+                git branch: 'main',
+                    url: 'https://github.com/neeleshram02/employee-app.git'
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $IMAGE_NAME:latest -f employeeapp/Dockerfile employeeapp'
-            }
-        }
-
-        stage('Docker Login') {
-            steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: 'dockerhub',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )
-                ]) {
-                    sh '''
-                    echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                    '''
-                }
+                sh """
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                """
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                sh 'docker push $IMAGE_NAME:latest'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+
+                    sh """
+                        echo "\$DOCKER_PASS" | docker login -u "\$DOCKER_USER" --password-stdin
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                        docker logout
+                    """
+                }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                sh '''
-                kubectl apply -f employeeapp/kubernetes/
-                kubectl rollout restart deployment/employeeapp
-                kubectl rollout status deployment/employeeapp
-                '''
+                sh """
+                    kubectl apply -f deployment.yml
+                    kubectl apply -f service.yml
+                """
             }
         }
 
         stage('Verify Deployment') {
             steps {
-                sh '''
-                kubectl get deployments
-                kubectl get pods
-                kubectl get svc
-                '''
+                sh """
+                    kubectl get deployments
+                    kubectl get pods
+                    kubectl get services
+                """
             }
+        }
+    }
+
+    post {
+        success {
+            echo 'Employee application deployed successfully!'
+        }
+
+        failure {
+            echo 'Pipeline failed. Check the stage logs.'
         }
     }
 }
